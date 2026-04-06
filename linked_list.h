@@ -40,7 +40,7 @@ inline bool isSorted(Node* head, int n) {
     Node* cur = head;
     int   cnt = 1;
     while (cur->next) {
-        if (cur->data > cur->next->data) return false;
+        if (cur->value > cur->next->value) return false;
         cur = cur->next;
         ++cnt;
     }
@@ -53,7 +53,7 @@ inline bool isSorted(Node* head, int n) {
 inline void printList(Node* head, int limit = 20) {
     int cnt = 0;
     for (Node* p = head; p && cnt < limit; p = p->next, ++cnt)
-        std::cout << p->data << (p->next && cnt + 1 < limit ? " -> " : "");
+        std::cout << p->value << (p->next && cnt + 1 < limit ? " -> " : "");
     std::cout << (limit && head ? " ...\n" : "\n");
 }
 

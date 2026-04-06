@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-#include "linked_list.h"      // createList, printList, freeList, listLength
+#include "../linked_list.h"      // createList, printList, freeList, listLength
 #include "cuda_list_sort.cuh" // thrustSort, cudaOddEvenSort, cudaBitonicSort
 
 using SortFn = Node* (*)(Node*);

@@ -11,7 +11,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
 #include <cuda_runtime.h>
-#include "linked_list.h"   // Node, createList, etc.
+#include "../linked_list.h"   // Node, createList, etc.
 
 // ── GPU error checking macro ──────────────────────────────────────────────────
 #define CUDA_CHECK(call)                                                    \
@@ -29,7 +29,7 @@ inline int* listToArray(Node* head, int n) {
     int* arr = new int[n];
     Node* p  = head;
     for (int i = 0; i < n; ++i, p = p->next)
-        arr[i] = p->val;
+        arr[i] = p->value;
     return arr;
 }
 
