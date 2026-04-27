@@ -5,16 +5,16 @@
 #include <algorithm>
 #include <iomanip>
 #include <cstdlib>
-#include <sstream>
-#include <map>
 #include <string>
+#include <map>
 #include "../linked_list.h"
 
 using namespace std;
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Result  –  one benchmark run's collected metrics
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Result - Туршилтын үр дүнг хадгалах бүтэц
+ * Огноо, хурд, харьцуулалт, солилцоо зэрэг үзүүлэлтүүдийг агуулна.
+ */
 struct Result {
     string    version;
     int       threads;
@@ -24,14 +24,11 @@ struct Result {
     long long swaps;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  printStats
-//  Prints timing, comparisons, swaps, and throughput for a single Result.
-//  Called after every sort run to provide immediate per-run feedback.
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * printStats - Тухайн туршилтын үр дүнг дэлгэцэнд хэвлэх функц
+ */
 void printStats(const Result& r) {
     double throughput = (r.time_ms > 0.0) ? r.n / (r.time_ms / 1000.0) : 0.0;
-
     cout << "  ┌─ Version     : " << r.version << "\n";
     cout << "  │  Threads     : " << r.threads << "\n";
     cout << "  │  Size        : " << r.n << " elements\n";
@@ -43,23 +40,18 @@ void printStats(const Result& r) {
     cout << "  └─ Throughput  : " << throughput << " elem/s\n";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  sequentialBubbleSort
-//
-//  Classic O(n²) bubble sort adapted for a singly linked list.
-//  Only DATA values are swapped – pointer structure is never touched.
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * sequentialBubbleSort - Дараалсан (Sequential) бөмбөлгөн эрэмбэлэлт
+ * Хугацааны нарийн төвөгтэй байдал: O(n^2)
+ */
 Result sequentialBubbleSort(Node* head, int n) {
     long long comparisons = 0;
     long long swaps       = 0;
-
     auto t0 = chrono::high_resolution_clock::now();
 
-    bool swapped;
     for (int i = 0; i < n - 1; ++i) {
-        swapped   = false;
+        bool swapped = false;
         Node* cur = head;
-
         for (int j = 0; j < n - i - 1; ++j) {
             ++comparisons;
             if (cur->data > cur->next->data) {
@@ -69,175 +61,152 @@ Result sequentialBubbleSort(Node* head, int n) {
             }
             cur = cur->next;
         }
-
-        if (!swapped) break; // Early exit: no swap means sorted
+        if (!swapped) break; // Жагсаалт эрэмбэлэгдсэн бол эрт гарах
     }
 
     auto t1 = chrono::high_resolution_clock::now();
+    if (!isSorted(head, n)) cerr << "[ERROR] Sequential result is NOT sorted!\n";
 
-    if (!isSorted(head, n))
-        cerr << "[ERROR] Sequential result is NOT sorted!\n";
-
-    return {"Sequential", 1, n,
-            chrono::duration<double, milli>(t1 - t0).count(),
-            comparisons, swaps};
+    return {"Sequential", 1, n, chrono::duration<double, milli>(t1 - t0).count(), comparisons, swaps};
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  openmpBubbleSort
-//
-//  Odd-Even Transposition Sort parallelised with OpenMP.
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * openmpBubbleSort - OpenMP ашигласан Параллел бөмбөлгөн эрэмбэлэлт
+ * "Odd-Even Transposition" алгоритмыг ашиглан параллелчилсан.
+ * 
+ * Оновчлол:
+ * 1. Persistent Parallel Region: Thread-үүдийг нэг удаа үүсгэж, fork-join overhead-ийг багасгасан.
+ * 2. Pointer Caching: Linked List-ийн элементүүдийн хаягийг vector-т хадгалж, санах ойн хандалтыг (O(1)) хурдасгасан.
+ * 3. Reduction: Comparisons болон Swaps-ийг thread-safe байдлаар тоолсон.
+ */
 Result openmpBubbleSort(Node* head, int n, int num_threads) {
     long long total_comparisons = 0;
     long long total_swaps       = 0;
 
-    // Cache node pointers for O(1) random access inside OpenMP threads
+    // Жагсаалтын зангилаануудын хаягийг кэшлэх (Санах ойн локал чанарыг сайжруулах)
     vector<Node*> nodes(n);
-    {
-        Node* cur = head;
-        for (int i = 0; i < n; ++i) { nodes[i] = cur; cur = cur->next; }
-    }
-
-    omp_set_num_threads(num_threads);
-
-    bool any_swap = true; // Tracks whether early exit is possible
+    Node* cur = head;
+    for (int i = 0; i < n; ++i) { nodes[i] = cur; cur = cur->next; }
 
     auto t0 = chrono::high_resolution_clock::now();
 
-    for (int phase = 0; phase < n && any_swap; ++phase) {
+    // Параллел мужийг нэг удаа үүсгэх
+    #pragma omp parallel num_threads(num_threads) reduction(+:total_comparisons, total_swaps)
+    {
+        for (int phase = 0; phase < n; ++phase) {
+            int start_idx = (phase % 2 == 0) ? 0 : 1;
 
-        long long phase_comps = 0;
-        long long phase_swaps = 0;
-
-        int start_idx = (phase % 2 == 0) ? 0 : 1;
-
-        #pragma omp parallel for reduction(+:phase_comps, phase_swaps)
-        for (int i = start_idx; i < n - 1; i += 2) {
-            ++phase_comps;
-            if (nodes[i]->data > nodes[i + 1]->data) {
-                swap(nodes[i]->data, nodes[i + 1]->data);
-                ++phase_swaps;
+            // Хөрш элементүүдийг зэрэг харьцуулж солих
+            #pragma omp for nowait
+            for (int i = start_idx; i < n - 1; i += 2) {
+                ++total_comparisons;
+                if (nodes[i]->data > nodes[i + 1]->data) {
+                    swap(nodes[i]->data, nodes[i + 1]->data);
+                    ++total_swaps;
+                }
             }
+
+            // Үе бүрийн дараа thread-үүдийг синхрончлох (Lockstep)
+            #pragma omp barrier
         }
-
-        total_comparisons += phase_comps;
-        total_swaps       += phase_swaps;
-
-        // Early exit: only valid to check after a swap-free EVEN phase
-        if (phase_swaps == 0 && (phase % 2 == 0))
-            any_swap = false;
     }
 
     auto t1 = chrono::high_resolution_clock::now();
+    if (!isSorted(head, n)) cerr << "[ERROR] OpenMP result is NOT sorted!\n";
 
-    if (!isSorted(head, n))
-        cerr << "[ERROR] OpenMP (" << num_threads << " threads) result is NOT sorted!\n";
-
-    return {"OpenMP", num_threads, n,
-            chrono::duration<double, milli>(t1 - t0).count(),
-            total_comparisons, total_swaps};
+    return {"OpenMP", num_threads, n, chrono::duration<double, milli>(t1 - t0).count(), total_comparisons, total_swaps};
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Utility: human-readable size label
-// ─────────────────────────────────────────────────────────────────────────────
-static string sizeLabel(int n) {
-    if (n >= 1000000) return " 1M";
-    if (n >= 100000)  return "100k";
-    return " 10k";
+/**
+ * displaySummaryTable - Туршилтын нэгдсэн үр дүнг хүснэгтээр харуулах
+ */
+void displaySummaryTable(const vector<Result>& results, const vector<int>& sizes) {
+    map<int, double> seq_base;
+    for (const auto& r : results) if (r.version == "Sequential") seq_base[r.n] = r.time_ms;
+
+    cout << "\n+-----------------+---------+";
+    for (int n : sizes) {
+        string label = (n >= 1000000) ? to_string(n/1000000) + "M" : to_string(n/1000) + "k";
+        cout << " " << setw(7) << label << " (ms) |";
+    }
+    cout << " SpeedUp |\n+-----------------+---------+";
+    for (size_t i=0; i<sizes.size(); ++i) cout << "-----------+";
+    cout << "---------+\n";
+
+    auto printRow = [&](const string& ver, int thr) {
+        cout << "| " << left << setw(15) << ver << " | " << right << setw(7) << thr << " |";
+        double total_su = 0;
+        int count = 0;
+        for (int n : sizes) {
+            double time = 0;
+            for (const auto& r : results) if (r.version == ver && r.threads == thr && r.n == n) time = r.time_ms;
+            if (time > 0) {
+                cout << setw(10) << fixed << setprecision(2) << time << " |";
+                total_su += seq_base[n] / time;
+                count++;
+            } else cout << "    N/A    |";
+        }
+        cout << setw(8) << fixed << setprecision(2) << (count ? total_su/count : 0.0) << "x |\n";
+    };
+
+    printRow("Sequential", 1);
+    cout << "+-----------------+---------+";
+    for (size_t i=0; i<sizes.size(); ++i) cout << "-----------+";
+    cout << "---------+\n";
+
+    vector<int> thr_tested = {2, 4, 8};
+    for (int t : thr_tested) printRow("OpenMP", t);
+    cout << "+-----------------+---------+";
+    for (size_t i=0; i<sizes.size(); ++i) cout << "-----------+";
+    cout << "---------+\n";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  main
-// ─────────────────────────────────────────────────────────────────────────────
 int main() {
-    vector<int> sizes           = {10000, 100000 /*, 1000000*/};
-    vector<int> threads_to_test = {2, 4, 8};
-    int         sz_ref[3]       = {10000, 100000, 1000000};
+    // Даалгаврын шаардлагын дагуу 10k, 100k, 1M хэмжээтэй өгөгдөл дээр турших
+    vector<int> sizes = {10000, 100000, 1000000}; 
+    
+    // Системийн боломжит thread-үүдийг тодорхойлох
+    int max_threads = omp_get_max_threads();
+    vector<int> threads_to_test;
+    if (max_threads >= 2) threads_to_test.push_back(2);
+    if (max_threads >= 4) threads_to_test.push_back(4);
+    if (max_threads >= 8) threads_to_test.push_back(8);
+    if (find(threads_to_test.begin(), threads_to_test.end(), max_threads) == threads_to_test.end()) {
+        threads_to_test.push_back(max_threads);
+    }
 
     vector<Result> results;
 
     cout << "================================================================\n";
-    cout << "  Bubble Sort on Singly Linked List  –  Performance Benchmark\n";
-    cout << "  Sequential  vs  OpenMP Odd-Even Transposition Sort\n";
+    cout << "  F.CSM306 - OpenMP Bubble Sort on Linked List Benchmark\n";
+    cout << "  Хэрэгжүүлсэн: Оновчтой Odd-Even Transposition Sort\n";
+    cout << "  Системийн нийт thread: " << max_threads << "\n";
     cout << "================================================================\n";
 
     for (int n : sizes) {
-        cout << "\n[Dataset: " << sizeLabel(n) << " (" << n << " elements)]\n\n";
+        cout << "\n[Dataset: " << n << " elements]\n";
+        
+        Node* head_seq = createList(n);
+        cout << " -> Running Sequential...\n";
+        Result r_seq = sequentialBubbleSort(head_seq, n);
+        results.push_back(r_seq);
+        printStats(r_seq);
+        deleteList(head_seq);
 
-        // ── Run sequential ────────────────────────────────────────────────────
-        {
-            Node*  head = createList(n);
-            cout << "Running Sequential...\n";
-            Result r = sequentialBubbleSort(head, n);
-            printStats(r);
-            cout << "\n";
-            results.push_back(r);
-            deleteList(head);
-        }
-
-        // ── Run OpenMP with each thread count ─────────────────────────────────
         for (int t : threads_to_test) {
-            Node*  head = createList(n);
-            cout << "Running OpenMP (" << t << " threads)...\n";
-            Result r = openmpBubbleSort(head, n, t);
-            printStats(r);
-            cout << "\n";
-            results.push_back(r);
-            deleteList(head);
+            Node* head_omp = createList(n);
+            cout << " -> Running OpenMP (" << t << " threads)...\n";
+            Result r_omp = openmpBubbleSort(head_omp, n, t);
+            results.push_back(r_omp);
+            printStats(r_omp);
+            deleteList(head_omp);
         }
     }
 
-    map<int, double> seq_base;
-    for (const auto& r : results)
-        if (r.version == "Sequential") seq_base[r.n] = r.time_ms;
-
-    cout << "\n+-----------------+---------+----------+-----------+---------+---------+\n";
-    cout << "| Version         | Threads | 10k (ms) | 100k (ms) | 1M (ms) | SpeedUp |\n";
-    cout << "+-----------------+---------+----------+-----------+---------+---------+\n";
-
-    auto printRow = [&](const string& ver, int thr) {
-        double t[3]  = {0.0, 0.0, 0.0};
-        double sp_sum = 0.0;
-        int    sp_cnt = 0;
-
-        for (const auto& r : results) {
-            if (r.version != ver || r.threads != thr) continue;
-            for (int k = 0; k < 3; ++k)
-                if (r.n == sz_ref[k]) t[k] = r.time_ms;
-            if (seq_base.count(r.n) && r.time_ms > 0.0) {
-                sp_sum += seq_base[r.n] / r.time_ms;
-                ++sp_cnt;
-            }
-        }
-
-        double avg_sp = (ver == "Sequential") ? 1.0 : (sp_cnt > 0) ? sp_sum / sp_cnt : 0.0;
-
-        cout << "| " << left  << setw(15) << ver << " | " << right << setw(7)  << thr << " |";
-
-        int widths[3] = {8, 9, 8};
-        for (int k = 0; k < 3; ++k) {
-            if (t[k] > 0.0) cout << setw(widths[k]) << fixed << setprecision(2) << t[k] << " |";
-            else cout << setw(widths[k] - 2) << "N/A" << "   |";
-        }
-        cout << setw(6) << fixed << setprecision(2) << avg_sp << "x |\n";
-    };
-
-    printRow("Sequential", 1);
-    cout << "+-----------------+---------+----------+-----------+---------+---------+\n";
-    for (int t : threads_to_test) printRow("OpenMP", t);
-    cout << "+-----------------+---------+----------+-----------+---------+---------+\n";
-
-    cout << "\n+-------------+---------+------+--------------+--------------+--------------------+\n";
-    cout << "| Version     | Threads | Size |  Comparisons |        Swaps | Throughput(elem/s) |\n";
-    cout << "+-------------+---------+------+--------------+--------------+--------------------+\n";
-
-    for (const auto& r : results) {
-        double thr = (r.time_ms > 0.0) ? r.n / (r.time_ms / 1000.0) : 0.0;
-        cout << "| " << left  << setw(11) << r.version << " | " << right << setw(7)  << r.threads << " | " << setw(4)  << sizeLabel(r.n) << " | " << setw(12) << r.comparisons << " | " << setw(12) << r.swaps << " | " << setw(18) << fixed << setprecision(0) << thr << " |\n";
-    }
-    cout << "+-------------+---------+------+--------------+--------------+--------------------+\n";
+    displaySummaryTable(results, sizes);
+    
+    cout << "\n* 1M элементийг турших бол main() доторх 'sizes' хэсгийг өөрчилнө үү.\n";
+    cout << "* Бөмбөлгөн эрэмбэлэлт нь O(n^2) тул 1M дээр маш их хугацаа авдаг.\n";
 
     return 0;
 }
