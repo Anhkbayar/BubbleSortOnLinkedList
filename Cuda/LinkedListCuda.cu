@@ -42,35 +42,58 @@ __global__ void oddEvenKernel(int *arr, int n, int phase)
     }
 }
 
-Node *oddEvenSort(Node *head, int threads, int blocks)
+Node *oddEvenSort(
+    Node *head,
+    int threads,
+    int blocks,
+    double &computationTimeMs,
+    double &executionTimeMs,
+    double &dataTransferTimeMs)
 {
     int n = listLength(head);
     if (n <= 1)
         return head;
 
+    auto execStart = std::chrono::high_resolution_clock::now();
     int *h_arr = listToArray(head, n);
 
     int *d_arr;
     cudaMalloc(&d_arr, n * sizeof(int));
+
+    // transfer time 1
+    auto transferStart = std::chrono::high_resolution_clock::now();
     cudaMemcpy(d_arr, h_arr, n * sizeof(int), cudaMemcpyHostToDevice);
+    auto transferEnd = std::chrono::high_resolution_clock::now();
 
-    // int threads = 256;
-    // int blocks = (n / 2 + threads - 1) / threads;
-
+    // computation time
+    auto computationStart = std::chrono::high_resolution_clock::now();
     for (int pass = 0; pass < n; ++pass)
     {
         oddEvenKernel<<<blocks, threads>>>(d_arr, n, pass % 2);
     }
 
     cudaDeviceSynchronize();
+    auto computationEnd = std::chrono::high_resolution_clock::now();
 
+    auto transferStart2 = std::chrono::high_resolution_clock::now();
     cudaMemcpy(h_arr, d_arr, n * sizeof(int), cudaMemcpyDeviceToHost);
+    auto transferEnd2 = std::chrono::high_resolution_clock::now();
 
     cudaFree(d_arr);
 
     arrayToList(head, h_arr, n);
 
     delete[] h_arr;
+    auto execEnd = std::chrono::high_resolution_clock::now();
+
+    double hostToDeviceMs = std::chrono::duration<double, std::milli>(transferEnd - transferStart).count();
+    double deviceToHostMs = std::chrono::duration<double, std::milli>(transferEnd2 - transferStart2).count();
+
+    dataTransferTimeMs = hostToDeviceMs + deviceToHostMs;
+
+    computationTimeMs = std::chrono::duration<double, std::milli>(computationEnd - computationStart).count();
+    executionTimeMs = std::chrono::duration<double, std::milli>(execEnd - execStart).count();
+
     return head;
 }
 
@@ -82,8 +105,19 @@ CudaResult benchmark(const std::string &name, int n)
     int threads = 256;
     int blocks = (n / 2 + threads - 1) / threads;
 
+    double computationTimeMs = 0.0;
+    double executionTimeMs = 0.0;
+    double dataTransferTimeMs = 0.0;
+
     auto t_start = std::chrono::high_resolution_clock::now();
-    Node *sorted = oddEvenSort(list, threads, blocks);
+    Node *sorted = oddEvenSort(
+        list,
+        threads,
+        blocks,
+        computationTimeMs,
+        executionTimeMs,
+        dataTransferTimeMs);
+
     auto t_end = std::chrono::high_resolution_clock::now();
 
     double ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
@@ -101,7 +135,9 @@ CudaResult benchmark(const std::string &name, int n)
         n,
         blocks,
         threads,
-        ms,
+        computationTimeMs,
+        executionTimeMs,
+        dataTransferTimeMs,
         throughput,
         ok};
 
@@ -120,13 +156,20 @@ int main()
 
     constexpr int N_SMALL = 10000;
     constexpr int N_MEDIUM = 100000;
-    constexpr int N_LARGE = 1000000;
+    constexpr int N_LARGE = 200000;
+
+    std::string filename = "cuda_results.csv";
 
     printCudaResultHeader();
-    for (int n : {N_SMALL, N_MEDIUM, N_LARGE})
+    writeCudaCsvHeader(filename);
+    for (int i = 0; i < 4; i++)
     {
-        CudaResult result = benchmark("Cuda Odd-Even", n);
-        printCudaResult(result);
+        for (int n : {N_SMALL, N_MEDIUM, N_LARGE})
+        {
+            CudaResult result = benchmark("Cuda Odd-Even", n);
+            printCudaResult(result);
+            appendCudaResultToCsv(filename, result);
+        }
     }
 
     return 0;

@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <vector>
 #include <string>
+#include <fstream>
 
 struct CpuResult
 {
@@ -48,7 +49,7 @@ inline void printCpuResultHeader()
         << std::setw(10) << "Sorted"
         << '\n';
 
-    std::cout << std::string(97, '-') << '\n';
+    std::cout << std::string(127, '-') << '\n';
 }
 
 // Print one CPU result row
@@ -68,6 +69,38 @@ inline void printCpuResult(const CpuResult &result)
         << '\n';
 }
 
+inline void writeCpuCsvHeader(const std::string &filename)
+{
+    std::ofstream file(filename);
+
+    file << "Type,"
+         << "Size,"
+         << "Threads,"
+         << "ComputationTimeMs,"
+         << "ExecutionTimeMs,"
+         << "DataTransferTimeMs,"
+         << "Throughput,"
+         << "Speedup,"
+         << "Sorted"
+         << '\n';
+}
+
+inline void appendCpuResultToCsv(const std::string &filename, const CpuResult &result)
+{
+    std::ofstream file(filename, std::ios::app);
+
+    file << result.type << ','
+         << result.size << ','
+         << result.threadCount << ','
+         << std::fixed << std::setprecision(3) << result.computationTimeMs << ','
+         << std::fixed << std::setprecision(3) << result.executionTimeMs << ','
+         << std::fixed << std::setprecision(3) << result.dataTransferTimeMs << ','
+         << std::fixed << std::setprecision(2) << result.throughput << ','
+         << std::fixed << std::setprecision(2) << result.speedup << ','
+         << (result.sortedOk ? "Yes" : "No")
+         << '\n';
+}
+
 // Print table header for CUDA results
 inline void printCudaResultHeader()
 {
@@ -76,7 +109,7 @@ inline void printCudaResultHeader()
         << std::setw(15) << "Type"
         << std::setw(12) << "Size"
         << std::setw(12) << "Blocks"
-        << std::setw(20) << "Threads/Block"
+        << std::setw(15) << "Threads/Block"
         << std::setw(15) << "Computation(ms)"
         << std::setw(15) << "Execution(ms)"
         << std::setw(15) << "Data Transfer(ms)"
@@ -84,7 +117,7 @@ inline void printCudaResultHeader()
         << std::setw(10) << "Sorted"
         << '\n';
 
-    std::cout << std::string(102, '-') << '\n';
+    std::cout << std::string(127, '-') << '\n';
 }
 
 // Print one CUDA result row
@@ -95,11 +128,43 @@ inline void printCudaResult(const CudaResult &result)
         << std::setw(15) << result.type
         << std::setw(12) << result.size
         << std::setw(12) << result.blocks
-        << std::setw(20) << result.threadsPerBlock
+        << std::setw(15) << result.threadsPerBlock
         << std::setw(15) << std::fixed << std::setprecision(3) << result.computationTimeMs
         << std::setw(15) << std::fixed << std::setprecision(3) << result.executionTimeMs
         << std::setw(15) << std::fixed << std::setprecision(3) << result.dataTransferTimeMs
         << std::setw(18) << std::fixed << std::setprecision(2) << result.throughput
         << std::setw(10) << (result.sortedOk ? "Yes" : "No")
         << '\n';
+}
+
+inline void writeCudaCsvHeader(const std::string &filename)
+{
+    std::ofstream file(filename);
+
+    file << "Type,"
+         << "Size,"
+         << "Blocks,"
+         << "ThreadsPerBlock,"
+         << "ComputationTimeMs,"
+         << "ExecutionTimeMs,"
+         << "DataTransferTimeMs,"
+         << "Throughput,"
+         << "Sorted"
+         << '\n';
+}
+
+inline void appendCudaResultToCsv(const std::string &filename, const CudaResult &result)
+{
+    std::ofstream file(filename, std::ios::app);
+
+    file << result.type << ','
+         << result.size << ','
+         << result.blocks << ','
+         << result.threadsPerBlock << ','
+         << std::fixed << std::setprecision(3) << result.computationTimeMs << ','
+         << std::fixed << std::setprecision(3) << result.executionTimeMs << ','
+         << std::fixed << std::setprecision(3) << result.dataTransferTimeMs << ','
+         << std::fixed << std::setprecision(2) << result.throughput << ','
+         << (result.sortedOk ? "Yes" : "No")
+         << '\n';
 }
