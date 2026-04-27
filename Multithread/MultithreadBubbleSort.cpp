@@ -1,13 +1,14 @@
 #include "../linked_list.h"
 #include "ReusableBarrier.h"
 
+#include <algorithm>
 #include <atomic>
 #include <thread>
-#include <vector>
-#include <algorithm>
 #include <utility>
+#include <vector>
 
-// Convert linked list into an indexable vector of node pointers
+// Build an indexable view of the linked list without copying node values.
+// The sort still modifies the original linked-list nodes by swapping their data.
 static std::vector<Node *> buildNodeVector(Node *head)
 {
     std::vector<Node *> nodes;
@@ -31,7 +32,7 @@ void parallelBubbleSortLinkedList(Node *head, int numThreads)
     if (numThreads <= 0)
         numThreads = 1;
 
-    // In one phase, maximum useful parallel comparisons is n/2
+    // In one odd-even phase, at most n/2 independent adjacent pairs exist.
     numThreads = std::min(numThreads, std::max(1, n / 2));
 
     ReusableBarrier barrier(numThreads);
@@ -42,6 +43,7 @@ void parallelBubbleSortLinkedList(Node *head, int numThreads)
     {
         int pairCount = (n - startIndex) / 2;
 
+        // Split the phase's independent compare-swap pairs evenly among threads.
         int beginPair = (tid * pairCount) / numThreads;
         int endPair = ((tid + 1) * pairCount) / numThreads;
 
@@ -51,7 +53,7 @@ void parallelBubbleSortLinkedList(Node *head, int numThreads)
             if (i + 1 < n && nodes[i]->data > nodes[i + 1]->data)
             {
                 std::swap(nodes[i]->data, nodes[i + 1]->data);
-                swapped.store(true, std::memory_order_relaxed);
+                swapped.store(true);
             }
         }
     };
@@ -62,7 +64,7 @@ void parallelBubbleSortLinkedList(Node *head, int numThreads)
         {
             if (tid == 0)
             {
-                swapped.store(false, std::memory_order_relaxed);
+                swapped.store(false);
             }
             barrier.wait();
 
@@ -76,12 +78,12 @@ void parallelBubbleSortLinkedList(Node *head, int numThreads)
 
             if (tid == 0)
             {
-                done.store(!swapped.load(std::memory_order_relaxed),
-                           std::memory_order_relaxed);
+                // If no thread swapped in this full round, the list is sorted.
+                done.store(!swapped.load());
             }
             barrier.wait();
 
-            if (done.load(std::memory_order_relaxed))
+            if (done.load())
             {
                 break;
             }
