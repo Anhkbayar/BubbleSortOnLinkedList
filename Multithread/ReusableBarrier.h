@@ -1,16 +1,36 @@
 #pragma once
-#include <condition_variable>
+#include <atomic>
 #include <cstddef>
-#include <mutex>
+#include <thread>
 
 class ReusableBarrier
 {
 private:
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::size_t threshold;
-    std::size_t count;
-    std::size_t generation;
+    const std::size_t threshold;
+    std::atomic<std::size_t> count;
+    std::atomic<std::size_t> generation;
+
+    template <typename Completion>
+    void waitImpl(Completion completion)
+    {
+        const std::size_t gen = generation.load(std::memory_order_acquire);
+
+        if (count.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        {
+            // Last arriving thread runs optional phase-completion work first.
+            completion();
+            count.store(threshold, std::memory_order_release);
+            generation.fetch_add(1, std::memory_order_acq_rel);
+        }
+        else
+        {
+            // Spin-yield avoids the heavier mutex/condition_variable wakeup cost.
+            while (generation.load(std::memory_order_acquire) == gen)
+            {
+                std::this_thread::yield();
+            }
+        }
+    }
 
 public:
     explicit ReusableBarrier(std::size_t num_threads)
@@ -20,21 +40,14 @@ public:
     // The generation counter lets the same barrier be reused every round.
     void wait()
     {
-        std::unique_lock<std::mutex> lock(mtx);
-        std::size_t gen = generation;
+        waitImpl([] {});
+    }
 
-        if (--count == 0)
-        {
-            // Last arriving thread releases the group and prepares the next use.
-            generation++;
-            count = threshold;
-            cv.notify_all();
-        }
-        else
-        {
-            // Predicate protects against spurious wakeups from condition_variable.
-            cv.wait(lock, [&]
-                    { return gen != generation; });
-        }
+    // Same barrier wait, but the last arriving thread runs completion before
+    // the waiting threads are released.
+    template <typename Completion>
+    void wait(Completion completion)
+    {
+        waitImpl(completion);
     }
 };
