@@ -6,7 +6,6 @@
 #include "../linked_list.h"
 #include "../results.h"
 
-// Array to list conversion
 int *listToArray(Node *head, int n)
 {
     int *arr = new int[n];
@@ -42,6 +41,8 @@ __global__ void oddEvenKernel(int *arr, int n, int phase)
     }
 }
 
+
+//undsen sorting logic
 Node *oddEvenSort(
     Node *head,
     int threads,
@@ -54,13 +55,14 @@ Node *oddEvenSort(
     if (n <= 1)
         return head;
 
+    //execution time
     auto execStart = std::chrono::high_resolution_clock::now();
     int *h_arr = listToArray(head, n);
 
     int *d_arr;
     cudaMalloc(&d_arr, n * sizeof(int));
 
-    // transfer time 1
+    // transfer time 1 (cpuTogpu)
     auto transferStart = std::chrono::high_resolution_clock::now();
     cudaMemcpy(d_arr, h_arr, n * sizeof(int), cudaMemcpyHostToDevice);
     auto transferEnd = std::chrono::high_resolution_clock::now();
@@ -75,6 +77,7 @@ Node *oddEvenSort(
     cudaDeviceSynchronize();
     auto computationEnd = std::chrono::high_resolution_clock::now();
 
+    // transfer time 2 (gpuTocpu)
     auto transferStart2 = std::chrono::high_resolution_clock::now();
     cudaMemcpy(h_arr, d_arr, n * sizeof(int), cudaMemcpyDeviceToHost);
     auto transferEnd2 = std::chrono::high_resolution_clock::now();
@@ -141,8 +144,6 @@ CudaResult benchmark(const std::string &name, int n)
         throughput,
         ok};
 
-    // std::cout << "First values: ";
-    // printList(sorted);
     deleteList(sorted);
     return result;
 }
