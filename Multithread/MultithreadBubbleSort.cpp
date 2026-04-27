@@ -38,6 +38,8 @@ void parallelBubbleSortLinkedList(Node *head, int numThreads)
     ReusableBarrier barrier(numThreads);
     std::atomic<bool> swapped(false);
     std::atomic<bool> done(false);
+    // One round contains an even phase and an odd phase; n phases are enough.
+    const int maxRounds = (n + 1) / 2;
 
     auto processPhase = [&](int tid, int startIndex)
     {
@@ -60,28 +62,20 @@ void parallelBubbleSortLinkedList(Node *head, int numThreads)
 
     auto worker = [&](int tid)
     {
-        for (int round = 0; round < n; ++round)
+        for (int round = 0; round < maxRounds; ++round)
         {
-            if (tid == 0)
-            {
-                swapped.store(false);
-            }
-            barrier.wait();
-
             // Even phase: (0,1), (2,3), (4,5), ...
             processPhase(tid, 0);
             barrier.wait();
 
             // Odd phase: (1,2), (3,4), (5,6), ...
             processPhase(tid, 1);
-            barrier.wait();
-
-            if (tid == 0)
+            barrier.wait([&]
             {
                 // If no thread swapped in this full round, the list is sorted.
                 done.store(!swapped.load());
-            }
-            barrier.wait();
+                swapped.store(false);
+            });
 
             if (done.load())
             {

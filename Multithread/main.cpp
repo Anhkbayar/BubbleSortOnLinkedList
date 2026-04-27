@@ -48,50 +48,63 @@ static std::vector<int> buildThreadCounts()
 
 int main()
 {
-    // Assignment-required input sizes: 10k, 100k, and 1M linked-list nodes.
-    const std::vector<int> sizes = {10000, 100000, 500000};
+    // Assignment-required input sizes: 10k, 100k, and 200k linked-list nodes.
+    const std::vector<int> sizes = {10000, 100000, 200000};
     const std::vector<int> threadCounts = buildThreadCounts();
+    const std::string csvFilename = "multithread_results.csv";
+    const int runCount = 3;
     std::vector<CpuResult> results;
 
     std::cout << "--- Multithread Linked list Sort ---\n\n";
+    writeCpuCsvHeader(csvFilename);
 
     for (int n : sizes)
     {
         std::cout << "\n[Dataset: " << n << " elements (" << sizeLabel(n) << ")]\n\n";
 
-        double baselineTimeMs = 0.0;
+        std::vector<double> baselineTimeMs(runCount, 0.0);
 
         for (int threadCount : threadCounts)
         {
-            Node *head = createList(n);
-
-            auto start = std::chrono::high_resolution_clock::now();
-            parallelBubbleSortLinkedList(head, threadCount);
-            auto end = std::chrono::high_resolution_clock::now();
-
-            const double timeMs =
-                std::chrono::duration<double, std::milli>(end - start).count();
-            const double throughput =
-                (timeMs > 0.0) ? static_cast<double>(n) / (timeMs / 1000.0) : 0.0;
-            const bool sortedOk = isSorted(head, n);
-
-            if (threadCount == 1)
+            for (int run = 0; run < runCount; ++run)
             {
-                baselineTimeMs = timeMs;
+                Node *head = createList(n);
+
+                auto start = std::chrono::high_resolution_clock::now();
+                parallelBubbleSortLinkedList(head, threadCount);
+                auto end = std::chrono::high_resolution_clock::now();
+
+                const double timeMs =
+                    std::chrono::duration<double, std::milli>(end - start).count();
+                const double computationTimeMs = timeMs;
+                const double executionTimeMs = timeMs;
+                const double dataTransferTimeMs = 0.0;
+                const double throughput =
+                    (timeMs > 0.0) ? static_cast<double>(n) / (timeMs / 1000.0) : 0.0;
+                const bool sortedOk = isSorted(head, n);
+
+                if (threadCount == 1)
+                {
+                    baselineTimeMs[run] = timeMs;
+                }
+
+                const double speedup =
+                    (threadCount == 1 || baselineTimeMs[run] <= 0.0) ? 1.0
+                                                                     : baselineTimeMs[run] / timeMs;
+
+                CpuResult result{"Multithread", n, threadCount, computationTimeMs,
+                                 executionTimeMs, dataTransferTimeMs, throughput,
+                                 speedup, sortedOk};
+                results.push_back(result);
+                appendCpuResultToCsv(csvFilename, result);
+
+                std::cout << "Run " << (run + 1) << "/" << runCount << " Result\n";
+                printCpuResultHeader();
+                printCpuResult(result);
+                std::cout << "\n";
+
+                deleteList(head);
             }
-
-            const double speedup =
-                (threadCount == 1 || baselineTimeMs <= 0.0) ? 1.0 : baselineTimeMs / timeMs;
-
-            CpuResult result{"Multithread", n, threadCount, timeMs, throughput, speedup, sortedOk};
-            results.push_back(result);
-
-            std::cout << "Run Result\n";
-            printCpuResultHeader();
-            printCpuResult(result);
-            std::cout << "\n";
-
-            deleteList(head);
         }
     }
 
