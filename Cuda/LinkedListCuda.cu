@@ -111,13 +111,13 @@ CudaResult benchmark(const std::string &name, int n)
 
     auto t_start = std::chrono::high_resolution_clock::now();
     Node *sorted = oddEvenSort(
-        list, 
-        threads, 
-        blocks, 
-        computationTimeMs, 
-        executionTimeMs, 
+        list,
+        threads,
+        blocks,
+        computationTimeMs,
+        executionTimeMs,
         dataTransferTimeMs);
-        
+
     auto t_end = std::chrono::high_resolution_clock::now();
 
     double ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
@@ -158,11 +158,18 @@ int main()
     constexpr int N_MEDIUM = 100000;
     constexpr int N_LARGE = 200000;
 
+    std::string filename = "cuda_results.csv";
+
     printCudaResultHeader();
-    for (int n : {N_SMALL, N_MEDIUM, N_LARGE})
+    writeCudaCsvHeader(filename);
+    for (int i = 0; i < 4; i++)
     {
-        CudaResult result = benchmark("Cuda Odd-Even", n);
-        printCudaResult(result);
+        for (int n : {N_SMALL, N_MEDIUM, N_LARGE})
+        {
+            CudaResult result = benchmark("Cuda Odd-Even", n);
+            printCudaResult(result);
+            appendCudaResultToCsv(filename, result);
+        }
     }
 
     return 0;
