@@ -4,6 +4,7 @@
 #include <iomanip>
 
 #include "../linked_list.h"
+#include "../results.h"
 
 // Array to list conversion
 int *listToArray(Node *head, int n)
@@ -41,7 +42,7 @@ __global__ void oddEvenKernel(int *arr, int n, int phase)
     }
 }
 
-Node *oddEvenSort(Node *head)
+Node *oddEvenSort(Node *head, int threads, int blocks)
 {
     int n = listLength(head);
     if (n <= 1)
@@ -53,8 +54,8 @@ Node *oddEvenSort(Node *head)
     cudaMalloc(&d_arr, n * sizeof(int));
     cudaMemcpy(d_arr, h_arr, n * sizeof(int), cudaMemcpyHostToDevice);
 
-    int threads = 256;
-    int blocks = (n / 2 + threads - 1) / threads;
+    // int threads = 256;
+    // int blocks = (n / 2 + threads - 1) / threads;
 
     for (int pass = 0; pass < n; ++pass)
     {
@@ -74,28 +75,40 @@ Node *oddEvenSort(Node *head)
 }
 
 // benchmark
-using SortFn = Node *(*)(Node *);
-
-void benchmark(const std::string &name, SortFn fn, int n)
+CudaResult benchmark(const std::string &name, int n)
 {
     Node *list = createList(n);
 
+    int threads = 256;
+    int blocks = (n / 2 + threads - 1) / threads;
+
     auto t_start = std::chrono::high_resolution_clock::now();
-    Node *sorted = fn(list);
+    Node *sorted = oddEvenSort(list, threads, blocks);
     auto t_end = std::chrono::high_resolution_clock::now();
 
     double ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
 
     bool ok = isSorted(sorted, n);
 
-    std::cout << std::left << std::setw(22) << name
-              << "n=" << std::setw(8) << n
-              << "time= " << std::fixed << std::setprecision(3) << ms << "ms\n"
-              << "  [" << (ok ? "OK" : "FAIL") << "]\n";
+    double throughput = 0.0;
+    if (ms > 0)
+    {
+        throughput = n / (ms / 1000.0);
+    }
+
+    CudaResult result{
+        name,
+        n,
+        blocks,
+        threads,
+        ms,
+        throughput,
+        ok};
 
     // std::cout << "First values: ";
     // printList(sorted);
     deleteList(sorted);
+    return result;
 }
 
 // Main
@@ -109,10 +122,11 @@ int main()
     constexpr int N_MEDIUM = 100000;
     constexpr int N_LARGE = 1000000;
 
+    printCudaResultHeader();
     for (int n : {N_SMALL, N_MEDIUM, N_LARGE})
     {
-        std::cout << "Ugugdliin too = " << n << "--\n";
-        benchmark("Odd-Even sort", oddEvenSort, n);
+        CudaResult result = benchmark("Cuda Odd-Even", n);
+        printCudaResult(result);
     }
 
     return 0;
