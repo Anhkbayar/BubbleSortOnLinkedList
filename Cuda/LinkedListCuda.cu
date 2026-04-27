@@ -93,8 +93,8 @@ void benchmark(const std::string &name, SortFn fn, int n)
               << "time= " << std::fixed << std::setprecision(3) << ms << "ms\n"
               << "  [" << (ok ? "OK" : "FAIL") << "]\n";
 
-    std::cout << "First values: ";
-    printList(sorted);
+    // std::cout << "First values: ";
+    // printList(sorted);
     deleteList(sorted);
 }
 
