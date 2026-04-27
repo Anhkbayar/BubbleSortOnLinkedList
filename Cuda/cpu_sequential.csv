@@ -1,0 +1,4 @@
+Type,Size,Threads,ComputationTimeMs,ExecutionTimeMs,DataTransferTimeMs,Throughput,Speedup,Sorted
+Sequential,10000,1,272.593,272.593,0.000,36684.71,1.00,Yes
+Sequential,100000,1,31346.052,31346.052,0.000,3190.19,1.00,Yes
+Sequential,200000,1,156084.264,156084.264,0.000,1281.36,1.00,Yes
