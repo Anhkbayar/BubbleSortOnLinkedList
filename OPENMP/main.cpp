@@ -16,11 +16,13 @@ using namespace std;
  */
 CpuResult sequentialBubbleSort(Node* head, int n) {
     auto t0 = chrono::high_resolution_clock::now();
+    long long ops = 0;
 
     for (int i = 0; i < n - 1; ++i) {
         bool swapped = false;
         Node* cur = head;
         for (int j = 0; j < n - i - 1; ++j) {
+            ops++; // Comparison
             if (cur->data > cur->next->data) {
                 swap(cur->data, cur->next->data);
                 swapped = true;
@@ -34,8 +36,9 @@ CpuResult sequentialBubbleSort(Node* head, int n) {
     double time = chrono::duration<double, milli>(t1 - t0).count();
     bool ok = isSorted(head, n);
     double throughput = (time > 0 ? n / (time / 1000.0) : 0);
+    double dataSize = n * (sizeof(Node)); 
 
-    return {"Sequential", n, 1, time, time, 0.0, throughput, 1.0, ok};
+    return {"Sequential", n, 1, time, time, 0.0, throughput, 1.0, ops, dataSize, ok};
 }
 
 /**
@@ -49,13 +52,15 @@ CpuResult openmpBubbleSort(Node* head, int n, int num_threads, double baselineTi
     auto ts1 = chrono::high_resolution_clock::now();
     double transfer_ms = chrono::duration<double, milli>(ts1 - ts0).count();
 
+    long long total_ops = 0;
     auto t0 = chrono::high_resolution_clock::now();
-    #pragma omp parallel num_threads(num_threads)
+    #pragma omp parallel num_threads(num_threads) reduction(+:total_ops)
     {
         for (int phase = 0; phase < n; ++phase) {
             int start_idx = (phase % 2 == 0) ? 0 : 1;
             #pragma omp for nowait
             for (int i = start_idx; i < n - 1; i += 2) {
+                total_ops++; 
                 if (nodes[i]->data > nodes[i + 1]->data) {
                     swap(nodes[i]->data, nodes[i + 1]->data);
                 }
@@ -68,9 +73,11 @@ CpuResult openmpBubbleSort(Node* head, int n, int num_threads, double baselineTi
     bool ok = isSorted(head, n);
     double throughput = (comp_ms > 0 ? n / (comp_ms / 1000.0) : 0);
     double speedup = (baselineTime > 0) ? baselineTime / comp_ms : 1.0;
+    double dataSize = n * (sizeof(Node) + sizeof(Node*));
 
-    return {"OpenMP", n, num_threads, comp_ms, comp_ms + transfer_ms, transfer_ms, throughput, speedup, ok};
+    return {"OpenMP", n, num_threads, comp_ms, comp_ms + transfer_ms, transfer_ms, throughput, speedup, total_ops, dataSize, ok};
 }
+
 
 int main() {
     vector<int> sizes = {10000, 100000, 200000}; 
